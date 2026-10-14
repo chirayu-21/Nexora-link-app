@@ -134,6 +134,12 @@ In development, the API returns the OTP in its response for local testing. This 
 
 Upcoming-event reminders are sent only for published events that a verified user marked as interesting while event alerts are enabled. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` on the backend to enable reminders. Without these, the API remains available but logs that email reminders are disabled. Event submissions require an admin to publish them before they appear in discovery. Admin roles must be assigned through a trusted operational process; there is no public role-elevation endpoint.
 
+### Deploy the frontend to Vercel
+
+Import the repository into Vercel and leave **Root Directory** set to the repository root. The root `vercel.json` installs and builds the frontend from `frontend/` and serves the generated `frontend/dist` output. It also routes the React `/auth` and `/dashboard` pages through the app entry point when those URLs are opened directly.
+
+The backend is a separate service and must also be deployed and configured for production API requests; the Vite development proxy only works locally.
+
 ## Publishing to GitHub
 
 1. Create an **empty** repository on GitHub (do not initialize it with a README or `.gitignore`).
