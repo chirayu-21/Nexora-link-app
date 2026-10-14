@@ -142,7 +142,7 @@ The backend is a separate service and must also be deployed and configured for p
 
 After Render creates the API service:
 
-1. Set the Vercel frontend environment variable `VITE_API_BASE_URL` to the Render service origin (for example, `https://nexora-api.onrender.com`, without `/api` or a trailing slash), then redeploy the frontend.
+1. The frontend defaults to `https://nexora-api-xl76.onrender.com`. If your API URL changes, set the Vercel frontend environment variable `VITE_API_BASE_URL` to the new service origin (without `/api` or a trailing slash), then redeploy the frontend.
 2. The Blueprint sets `APP_BASE_URL` to `https://nexoralink.vercel.app` so credentialed API requests from the frontend pass CORS checks. For a different frontend URL, update that value in Render. For multiple allowed origins, provide a comma-separated list.
 3. Configure `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` in the Render service using a production OTP delivery provider. Registration and login both require OTP delivery in production; these credentials are not included in the repository and the auth flows will return an error until they are set.
 
