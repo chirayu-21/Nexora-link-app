@@ -54,7 +54,16 @@ app.use('/api/v1/communities', communitiesRouter)
 app.use('/api/v1/messages', messagesRouter)
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (env.nodeEnv !== 'production') console.error('Unhandled request error:', err)
+  const error = err instanceof Error ? err : null
+  const code = err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+    ? err.code
+    : undefined
+  console.error('Unhandled request error:', {
+    method: _req.method,
+    path: _req.path,
+    name: error?.name ?? typeof err,
+    code,
+  })
   res.status(500).json({ error: 'internal_server_error', message: 'An unexpected error occurred. Please try again.' })
 })
 
