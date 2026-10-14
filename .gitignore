@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.venv/
+**/.venv/
+venv/
+**/venv/
+ENV/
+**/ENV/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Build output and test artifacts
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+coverage/
+**/coverage/
+.vite/
+**/.vite/
+*.tsbuildinfo
+*.local
+
+# Python caches and test/type-check output
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+
+# Local databases and uploaded user data
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+uploads/
+**/uploads/
+
+# Logs and local session data
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+cookies.txt
+cookies*.txt
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
