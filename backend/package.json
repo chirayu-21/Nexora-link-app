@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",
     "prisma:generate": "prisma generate",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev --name init"
   },
   "dependencies": {

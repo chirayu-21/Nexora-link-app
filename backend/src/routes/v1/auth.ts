@@ -49,7 +49,7 @@ function sanitizeUser(user: any) {
     isEmailVerified:user.isEmailVerified, isStudentVerified:user.isStudentVerified,
     verificationLevel:user.verificationLevel, role:user.role, createdAt:user.createdAt, updatedAt:user.updatedAt }
 }
-function setSessionCookie(res: any, token: string) { res.cookie('nexora_session',token,{httpOnly:true,sameSite:'lax',secure:env.nodeEnv==='production',maxAge:7*24*60*60*1000,path:'/'}) }
+function setSessionCookie(res: any, token: string) { res.cookie('nexora_session',token,{httpOnly:true,sameSite:env.nodeEnv==='production'?'none':'lax',secure:env.nodeEnv==='production',maxAge:7*24*60*60*1000,path:'/'}) }
 function otpHash(otp: string) { return crypto.createHmac('sha256',env.sessionSecret).update(otp).digest('hex') }
 function safeEqualHex(a: string, b: string) { const aa=Buffer.from(a,'hex'), bb=Buffer.from(b,'hex'); return aa.length===bb.length && crypto.timingSafeEqual(aa,bb) }
 async function createSessionForUser(userId: string, req: any) {
@@ -122,7 +122,7 @@ router.get('/me',requireAuth,async(req,res)=>res.json({success:true,user:sanitiz
 router.post('/logout',requireAuth,async(req,res)=>{
   const token=req.cookies?.nexora_session
   if (token) await prisma.session.updateMany({where:{tokenHash:crypto.createHash('sha256').update(token).digest('hex'),revokedAt:null},data:{revokedAt:new Date()}})
-  res.clearCookie('nexora_session',{path:'/',httpOnly:true,sameSite:'lax',secure:env.nodeEnv==='production'})
+  res.clearCookie('nexora_session',{path:'/',httpOnly:true,sameSite:env.nodeEnv==='production'?'none':'lax',secure:env.nodeEnv==='production'})
   return res.json({success:true,message:'Logged out successfully.'})
 })
 

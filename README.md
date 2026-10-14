@@ -138,7 +138,15 @@ Upcoming-event reminders are sent only for published events that a verified user
 
 Import the repository into Vercel and leave **Root Directory** set to the repository root. The root `vercel.json` installs and builds the frontend from `frontend/` and serves the generated `frontend/dist` output. It also routes the React `/auth` and `/dashboard` pages through the app entry point when those URLs are opened directly.
 
-The backend is a separate service and must also be deployed and configured for production API requests; the Vite development proxy only works locally.
+The backend is a separate service and must also be deployed and configured for production API requests; the Vite development proxy only works locally. A Render Blueprint is provided in `render.yaml`. To deploy it, push the repository to GitHub, select **New + → Blueprint** in Render, and connect the repository. Render will create the web service and database from the Blueprint. The included free Postgres database is temporary and expires after 30 days; do not use it for real user data.
+
+After Render creates the API service:
+
+1. Set the Vercel frontend environment variable `VITE_API_BASE_URL` to the Render service origin (for example, `https://nexora-api.onrender.com`, without `/api` or a trailing slash), then redeploy the frontend.
+2. The Blueprint sets `APP_BASE_URL` to `https://nexoralink.vercel.app` so credentialed API requests from the frontend pass CORS checks. For a different frontend URL, update that value in Render. For multiple allowed origins, provide a comma-separated list.
+3. Configure `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` in the Render service using a production OTP delivery provider. Registration and login both require OTP delivery in production; these credentials are not included in the repository and the auth flows will return an error until they are set.
+
+The frontend sends session cookies with API requests. Production backend cookies use `SameSite=None; Secure` so they can be used when the API is hosted on a different origin.
 
 ## Publishing to GitHub
 

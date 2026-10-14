@@ -31,20 +31,38 @@ const testimonials = [
   { quote: 'The event discovery flow gives students a cleaner way to find opportunities without the clutter of random campus spam.', author: 'Meher, design student' },
 ]
 
-async function apiFetch<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
 
-  const data = await response.json().catch(() => ({}))
+async function apiFetch<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  if (import.meta.env.PROD && !apiBaseUrl) {
+    throw new Error('The backend API is not configured. Set VITE_API_BASE_URL in Vercel and redeploy.')
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${apiBaseUrl}/api/v1${path}`, {
+      method,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch {
+    throw new Error(`Could not reach the backend API${apiBaseUrl ? ` at ${apiBaseUrl}` : ''}. Check that it is deployed and allows requests from this website.`)
+  }
+
+  const data: unknown = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new Error((data as { message?: string }).message ?? 'Request failed.')
+    const message = data && typeof data === 'object' && 'message' in data && typeof data.message === 'string'
+      ? data.message
+      : `The backend API returned HTTP ${response.status}. Check the API URL and backend deployment.`
+    throw new Error(message)
+  }
+
+  if (data === null) {
+    throw new Error('The backend API returned an invalid response. Check that VITE_API_BASE_URL points to the API server.')
   }
 
   return data as T

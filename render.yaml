@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: nexora-api
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm ci --prefix backend && npm run prisma:generate --prefix backend && npm run build --prefix backend
+    startCommand: npm run prisma:migrate:deploy --prefix backend && npm run start --prefix backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: USE_MOCK_DATA
+        value: "false"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexora-db
+          property: connectionString
+      - key: APP_BASE_URL
+        value: https://nexoralink.vercel.app
+      - key: OTP_DELIVERY_URL
+        sync: false
+      - key: OTP_DELIVERY_TOKEN
+        sync: false
+
+databases:
+  - name: nexora-db
+    databaseName: nexora
+    user: nexora
+    plan: free
+    region: ohio
+    postgresMajorVersion: "16"
+    ipAllowList: []
