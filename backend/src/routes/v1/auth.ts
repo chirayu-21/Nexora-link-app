@@ -59,6 +59,13 @@ async function createSessionForUser(userId: string, req: any) {
   return {sessionToken,expiresAt}
 }
 function issueOtp() { return String(crypto.randomInt(0,1_000_000)).padStart(6,'0') }
+function logAuthFailure(operation: string, stage: string, error: unknown) {
+  const name = error instanceof Error ? error.name : typeof error
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+  console.error('Authentication request failed:', { operation, stage, name, code })
+}
 function findUserByIdentifier(identifier: string) {
   const value=identifier.trim(); const email=value.toLowerCase(); const phone=normalizePhone(value)
   return prisma.user.findFirst({where:{OR:[{email},{mobileNumber:phone}]}})
@@ -78,31 +85,50 @@ async function deliverOtp(user: { email: string; mobileNumber?: string | null; f
   } finally { clearTimeout(timeout) }
 }
 
-router.post('/register', async (req,res) => {
-  const parsed=registerSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({error:'validation_error',message:'Check the registration details and try again.',details:parsed.error.flatten()})
-  const data=parsed.data; const email=data.email.toLowerCase(); const mobileNumber=data.mobileNumber
-  const existing=await prisma.user.findFirst({where:{OR:[{email},{mobileNumber}]}})
-  if (existing) return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'})
-  const otp=issueOtp()
-  try { await deliverOtp({email,mobileNumber,fullName:data.fullName},otp,'registration') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
-  let user
-  try { user=await prisma.user.create({data:{fullName:data.fullName,email,mobileNumber,age:data.age,passwordHash:await bcrypt.hash(data.password,12),collegeName:data.collegeName,degree:data.degree,branch:data.branch,academicYear:data.academicYear,skills:data.skills,interests:data.interests,otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0,verificationLevel:'UNVERIFIED'}}) } catch (error) { if (env.nodeEnv==='production') return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'}); throw error }
-  await prisma.userPrivacySettings.create({data:{userId:user.id,profileVisibility:'PUBLIC'}})
-  await prisma.userNotificationSettings.create({data:{userId:user.id}})
-  return res.status(201).json({success:true,message:'Account created. Verify the one-time code to finish registration.',otp:env.nodeEnv==='development'?otp:undefined})
+router.post('/register', async (req,res,next) => {
+  let stage = 'validate-registration'
+  try {
+    const parsed=registerSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({error:'validation_error',message:'Check the registration details and try again.',details:parsed.error.flatten()})
+    const data=parsed.data; const email=data.email.toLowerCase(); const mobileNumber=data.mobileNumber
+    stage = 'lookup-existing-account'
+    const existing=await prisma.user.findFirst({where:{OR:[{email},{mobileNumber}]}})
+    if (existing) return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'})
+    const otp=issueOtp()
+    stage = 'deliver-registration-otp'
+    try { await deliverOtp({email,mobileNumber,fullName:data.fullName},otp,'registration') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
+    stage = 'create-user'
+    let user
+    try { user=await prisma.user.create({data:{fullName:data.fullName,email,mobileNumber,age:data.age,passwordHash:await bcrypt.hash(data.password,12),collegeName:data.collegeName,degree:data.degree,branch:data.branch,academicYear:data.academicYear,skills:data.skills,interests:data.interests,otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0,verificationLevel:'UNVERIFIED'}}) } catch (error) { if (env.nodeEnv==='production') return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'}); throw error }
+    stage = 'create-default-settings'
+    await prisma.userPrivacySettings.create({data:{userId:user.id,profileVisibility:'PUBLIC'}})
+    await prisma.userNotificationSettings.create({data:{userId:user.id}})
+    return res.status(201).json({success:true,message:'Account created. Verify the one-time code to finish registration.',otp:env.nodeEnv==='development'?otp:undefined})
+  } catch (error) {
+    logAuthFailure('register', stage, error)
+    next(error)
+  }
 })
 
-router.post('/login', async (req,res) => {
-  const parsed=loginSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({error:'validation_error',message:'Enter a valid email/mobile number and password.'})
-  const user=await findUserByIdentifier(parsed.data.identifier)
-  if (!user || !user.passwordHash || !(await bcrypt.compare(parsed.data.password,user.passwordHash))) return res.status(401).json({error:'invalid_credentials',message:'Invalid email/mobile number or password.'})
-  if (user.isActive === false) return res.status(403).json({error:'account_disabled',message:'This account is currently disabled.'})
-  const otp=issueOtp()
-  try { await deliverOtp({email:user.email,mobileNumber:user.mobileNumber,fullName:user.fullName},otp,'login') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
-  await prisma.user.update({where:{id:user.id},data:{otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0}})
-  return res.json({success:true,message:'Password accepted. Enter the one-time code to complete login.',otp:env.nodeEnv==='development'?otp:undefined})
+router.post('/login', async (req,res,next) => {
+  let stage = 'validate-login'
+  try {
+    const parsed=loginSchema.safeParse(req.body)
+    if (!parsed.success) return res.status(400).json({error:'validation_error',message:'Enter a valid email/mobile number and password.'})
+    stage = 'lookup-account'
+    const user=await findUserByIdentifier(parsed.data.identifier)
+    if (!user || !user.passwordHash || !(await bcrypt.compare(parsed.data.password,user.passwordHash))) return res.status(401).json({error:'invalid_credentials',message:'Invalid email/mobile number or password.'})
+    if (user.isActive === false) return res.status(403).json({error:'account_disabled',message:'This account is currently disabled.'})
+    const otp=issueOtp()
+    stage = 'deliver-login-otp'
+    try { await deliverOtp({email:user.email,mobileNumber:user.mobileNumber,fullName:user.fullName},otp,'login') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
+    stage = 'save-login-otp'
+    await prisma.user.update({where:{id:user.id},data:{otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0}})
+    return res.json({success:true,message:'Password accepted. Enter the one-time code to complete login.',otp:env.nodeEnv==='development'?otp:undefined})
+  } catch (error) {
+    logAuthFailure('login', stage, error)
+    next(error)
+  }
 })
 
 router.post('/verify-otp', async (req,res) => {
