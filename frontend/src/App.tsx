@@ -391,23 +391,86 @@ function AuthPage() {
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const inputClass = 'nexora-input w-full rounded-xl px-4 py-3 text-sm text-white outline-none transition'
-  return <div className="auth-shell flex min-h-screen items-center justify-center px-4 py-10 text-slate-100"><div className="auth-orb auth-orb-one"/><div className="auth-orb auth-orb-two"/><div className="auth-card relative z-10 w-full max-w-3xl rounded-[2rem] p-6 sm:p-9">
-    <div className="mb-8 flex items-start justify-between gap-4"><div><Link to="/" className="mb-5 inline-flex items-center gap-3"><span className="brand-glyph">N</span><span className="text-sm font-black tracking-[.28em]">NEXORA</span></Link><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{mode==='login'?'Welcome back.':'Create your orbit.'}</h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">A smarter space for student builders, teams, and big ideas.</p></div><Link to="/" className="text-sm text-slate-400 hover:text-cyan-200">← Home</Link></div>
-    <div className="mb-7 flex rounded-2xl border border-white/10 bg-black/20 p-1.5"><button type="button" onClick={()=>switchMode('login')} className={`auth-tab ${mode==='login'?'active':''}`}>Log in</button><button type="button" onClick={()=>switchMode('register')} className={`auth-tab ${mode==='register'?'active':''}`}>Create account</button></div>
-    <form onSubmit={handleSubmit} className="space-y-4">{mode==='register' ? <div className="grid gap-4 sm:grid-cols-2">
-      <label className="field-label">Full name<input autoComplete="name" className={inputClass} value={form.fullName} onChange={e=>handleChange('fullName',e.target.value)} placeholder="Your full name" required minLength={2} maxLength={80}/></label>
-      <label className="field-label">Email address<input type="email" autoComplete="email" className={inputClass} value={form.email} onChange={e=>handleChange('email',e.target.value)} placeholder="you@college.edu" required/></label>
-      <label className="field-label">Mobile number<input type="tel" autoComplete="tel" inputMode="tel" pattern="[+0-9 ()-]{8,20}" className={inputClass} value={form.mobileNumber} onChange={e=>handleChange('mobileNumber',e.target.value)} placeholder="+91 98765 43210" required/></label>
-      <label className="field-label">Age<input type="number" min="13" max="100" className={inputClass} value={form.age} onChange={e=>handleChange('age',e.target.value)} placeholder="Age" required/></label>
-      <label className="field-label sm:col-span-2">College / university<input autoComplete="organization" className={inputClass} value={form.collegeName} onChange={e=>handleChange('collegeName',e.target.value)} placeholder="College or university name" required maxLength={160}/></label>
-      <label className="field-label">Degree / course <span className="optional">optional</span><input className={inputClass} value={form.degree} onChange={e=>handleChange('degree',e.target.value)} placeholder="B.Tech CSE"/></label>
-      <label className="field-label">Branch / department <span className="optional">optional</span><input className={inputClass} value={form.branch} onChange={e=>handleChange('branch',e.target.value)} placeholder="CSE (AI & ML)"/></label>
-      <label className="field-label sm:col-span-2">Skills <span className="optional">comma separated</span><input className={inputClass} value={form.skills} onChange={e=>handleChange('skills',e.target.value)} placeholder="Python, React, UI/UX"/></label>
-    </div> : <label className="field-label">Email or mobile number<input autoComplete="username" className={inputClass} value={form.identifier} onChange={e=>handleChange('identifier',e.target.value)} placeholder="you@example.com or +91…" required/></label>}
-    <label className="field-label">Password<input type="password" autoComplete={mode==='register'?'new-password':'current-password'} className={inputClass} value={form.password} onChange={e=>handleChange('password',e.target.value)} placeholder="At least 12 characters recommended" required minLength={8} maxLength={128}/></label>
-    {mode==='register' && <p className="text-xs leading-5 text-slate-500">Use a unique password. NEXORA stores a one-way password hash, never a readable password.</p>}{error&&<p role="alert" className="status-error">{error}</p>}
-    <button type="submit" disabled={busy} className="neon-button w-full rounded-xl px-5 py-3.5 font-bold text-slate-950 disabled:opacity-50">{busy?'Signing you in…':mode==='login'?'Log in ↗':'Create account ↗'}</button><p className="text-center text-xs text-slate-500">Password-protected session · Rate-limited authentication</p></form>
-  </div></div>
+  return (
+    <main className="auth-shell relative flex min-h-screen items-center justify-center px-4 py-6 text-slate-100 sm:px-6 sm:py-10">
+      <div className="auth-orb auth-orb-one" />
+      <div className="auth-orb auth-orb-two" />
+      <div className="auth-layout relative z-10 grid w-full max-w-6xl overflow-hidden rounded-[2rem]">
+        <section className="auth-story relative flex flex-col justify-between p-7 sm:p-10 lg:p-12">
+          <div>
+            <Link to="/" className="inline-flex items-center gap-3" aria-label="NEXORA home">
+              <span className="brand-glyph">N</span>
+              <span className="text-sm font-black tracking-[.28em] text-white">NEXORA</span>
+            </Link>
+            <p className="eyebrow mt-12">YOUR NEXT COLLABORATION STARTS HERE</p>
+            <h1 className="mt-4 max-w-lg text-4xl font-black leading-[1.06] tracking-tight text-white sm:text-5xl">
+              Build something bigger, <span className="auth-gradient-text">together.</span>
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-7 text-slate-300">
+              Meet ambitious students, find your team, and turn the ideas in your notes app into real projects.
+            </p>
+          </div>
+          <div className="auth-feature-list mt-10 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            {[
+              ['01', 'Find your people', 'Connect with builders who share your interests.'],
+              ['02', 'Make a team', 'Bring skills together around a project idea.'],
+              ['03', 'Keep momentum', 'Use private conversations to move work forward.'],
+            ].map(([number, title, description]) => (
+              <div key={number} className="auth-feature flex gap-3 rounded-2xl p-3">
+                <span className="auth-feature-number">{number}</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-8 hidden text-xs text-slate-500 lg:block">A student network for collaboration, communities, and campus opportunities.</p>
+        </section>
+
+        <section className="auth-panel p-6 sm:p-9 lg:p-12">
+          <div className="mb-7 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[.22em] text-cyan-200">{mode === 'login' ? 'Your workspace awaits' : 'Join the community'}</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2>
+              <p className="mt-2 text-sm text-slate-400">{mode === 'login' ? 'Pick up where your next idea begins.' : 'Set up your profile and find your people.'}</p>
+            </div>
+            <Link to="/" className="shrink-0 rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-cyan-300/40 hover:text-white">Home</Link>
+          </div>
+
+          <div className="mb-6 flex rounded-2xl border border-white/10 bg-slate-950/70 p-1.5" role="tablist" aria-label="Authentication options">
+            <button type="button" role="tab" aria-selected={mode === 'login'} onClick={() => switchMode('login')} className={`auth-tab ${mode === 'login' ? 'active' : ''}`}>Log in</button>
+            <button type="button" role="tab" aria-selected={mode === 'register'} onClick={() => switchMode('register')} className={`auth-tab ${mode === 'register' ? 'active' : ''}`}>Create account</button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field-label">Full name<input autoComplete="name" className={inputClass} value={form.fullName} onChange={event => handleChange('fullName', event.target.value)} placeholder="Your full name" required minLength={2} maxLength={80} /></label>
+                <label className="field-label">Email address<input type="email" autoComplete="email" className={inputClass} value={form.email} onChange={event => handleChange('email', event.target.value)} placeholder="you@college.edu" required /></label>
+                <label className="field-label">Mobile number<input type="tel" autoComplete="tel" inputMode="tel" pattern="[+0-9 ()-]{8,20}" className={inputClass} value={form.mobileNumber} onChange={event => handleChange('mobileNumber', event.target.value)} placeholder="+91 98765 43210" required /></label>
+                <label className="field-label">Age<input type="number" min="13" max="100" className={inputClass} value={form.age} onChange={event => handleChange('age', event.target.value)} placeholder="Your age" required /></label>
+                <label className="field-label sm:col-span-2">College / university<input autoComplete="organization" className={inputClass} value={form.collegeName} onChange={event => handleChange('collegeName', event.target.value)} placeholder="College or university name" required maxLength={160} /></label>
+                <label className="field-label">Degree / course <span className="optional">optional</span><input className={inputClass} value={form.degree} onChange={event => handleChange('degree', event.target.value)} placeholder="B.Tech CSE" /></label>
+                <label className="field-label">Branch / department <span className="optional">optional</span><input className={inputClass} value={form.branch} onChange={event => handleChange('branch', event.target.value)} placeholder="CSE (AI & ML)" /></label>
+                <label className="field-label sm:col-span-2">Skills <span className="optional">comma separated · optional</span><input className={inputClass} value={form.skills} onChange={event => handleChange('skills', event.target.value)} placeholder="Python, React, UI/UX" /></label>
+                <label className="field-label sm:col-span-2">Interests <span className="optional">comma separated · optional</span><input className={inputClass} value={form.interests} onChange={event => handleChange('interests', event.target.value)} placeholder="Hackathons, robotics, product design" /></label>
+              </div>
+            ) : (
+              <label className="field-label">Email or mobile number<input autoComplete="username" className={inputClass} value={form.identifier} onChange={event => handleChange('identifier', event.target.value)} placeholder="you@example.com or +91…" required /></label>
+            )}
+            <label className="field-label">Password<input type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} className={inputClass} value={form.password} onChange={event => handleChange('password', event.target.value)} placeholder="At least 8 characters" required minLength={8} maxLength={128} /></label>
+            {mode === 'register' && <p className="text-xs leading-5 text-slate-500">Use a unique password. Your password is stored as a one-way hash, never as readable text.</p>}
+            {error && <p role="alert" className="status-error">{error}</p>}
+            <button type="submit" disabled={busy} className="neon-button w-full rounded-xl px-5 py-3.5 font-bold text-slate-950 disabled:cursor-wait disabled:opacity-50">
+              {busy ? 'Please wait…' : mode === 'login' ? 'Log in to NEXORA ↗' : 'Create my account ↗'}
+            </button>
+            <p className="text-center text-xs text-slate-500">Password-protected session · Rate-limited authentication</p>
+          </form>
+        </section>
+      </div>
+    </main>
+  )
 }
 
 function DashboardPage() {
