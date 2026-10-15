@@ -13,11 +13,13 @@ NEXORA is a cross-college student collaboration platform for finding hackathon t
 
 - Student registration and login using email/mobile number and password.
 - Student profiles, search, and skill/interest-based collaborator recommendations.
-- Connection requests and private direct messaging.
+- Incoming and outgoing connection requests, including accept/decline actions and private direct messaging.
+- Public team discovery with member capacity and join controls.
 - Private group chats with participant-only message access.
 - Student clubs with open or approval-based membership, admin invitations, and a private chat for each club. Club chat access is removed when a member leaves.
 - Upcoming events and hackathon submissions with an admin review queue.
-- Event interest tracking, per-user email alert preferences, and a reminder email approximately 24 hours before an event.
+- Event interest tracking and per-user email alert preferences. Reminder delivery requires verified email and configured SMTP.
+- Dashboard section shortcuts and retryable, section-independent data loading so an optional API failure does not hide the rest of the dashboard.
 
 Direct and group messages are restricted by the API to conversation participants; club chats are restricted to club members. This is server-side access control, **not end-to-end encryption**: the server and database operator can access stored message content.
 

@@ -18,7 +18,7 @@ const teamSchema = z.object({
   registrationLink: z.string().trim().url().optional(),
 })
 
-router.get('/', requireAuth, async (_req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   const teams = await prisma.team.findMany({
     orderBy: { createdAt: 'desc' },
     take: 12,
@@ -37,6 +37,10 @@ router.get('/', requireAuth, async (_req, res) => {
       visibility: team.visibility,
       status: team.status,
       memberCount: await prisma.teamMember.count({ where: { teamId: team.id } }),
+      isMember: Boolean(await prisma.teamMember.findFirst({
+        where: { teamId: team.id, userId: req.user.id },
+        select: { id: true },
+      })),
     })),
   )
 

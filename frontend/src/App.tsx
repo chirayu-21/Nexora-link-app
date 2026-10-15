@@ -33,6 +33,16 @@ const testimonials = [
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'https://nexora-api-xl76.onrender.com')).replace(/\/+$/, '')
 
+class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function apiFetch<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   let response: Response
   try {
@@ -54,7 +64,7 @@ async function apiFetch<T>(path: string, method = 'GET', body?: unknown): Promis
     const message = data && typeof data === 'object' && 'message' in data && typeof data.message === 'string'
       ? data.message
       : `The backend API returned HTTP ${response.status}. Check the API URL and backend deployment.`
-    throw new Error(message)
+    throw new ApiError(message, response.status)
   }
 
   if (data === null) {
@@ -83,6 +93,16 @@ type ChatMessage = {
   senderId: string
   content: string
   createdAt: string
+}
+
+type DashboardConnection = {
+  id: string
+  senderId: string
+  receiverId: string
+  status: string
+  message?: string | null
+  sender?: { id: string; fullName: string }
+  receiver?: { id: string; fullName: string }
 }
 
 function LandingPage() {
@@ -411,6 +431,8 @@ function DashboardPage() {
     technologies?: string[]
     requiredRoles?: string[]
     memberCount?: number
+    maxTeamSize?: number
+    isMember?: boolean
   }>>([])
   const [communities, setCommunities] = useState<Array<{
     id: string
@@ -425,6 +447,7 @@ function DashboardPage() {
     chatConversationId?: string
   }>>([])
   const [communityRequests, setCommunityRequests] = useState<Record<string, Array<{ id: string; userId: string; fullName: string }>>>({})
+  const [connections, setConnections] = useState<DashboardConnection[]>([])
   const [communityInviteTarget, setCommunityInviteTarget] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Array<{
     id: string
@@ -441,7 +464,11 @@ function DashboardPage() {
   const [eventBusy, setEventBusy] = useState(false)
   const [eventNotice, setEventNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [dashboardError, setDashboardError] = useState('')
   const [connectingId, setConnectingId] = useState<string | null>(null)
+  const [connectionBusyId, setConnectionBusyId] = useState<string | null>(null)
+  const [teamBusyId, setTeamBusyId] = useState<string | null>(null)
+  const [connectionMessage, setConnectionMessage] = useState('Would love to connect and collaborate on exciting student projects.')
   const [quickAction, setQuickAction] = useState<'teammate' | 'team' | 'community' | 'events'>('teammate')
   const [teamForm, setTeamForm] = useState({
     name: '',
@@ -482,7 +509,6 @@ function DashboardPage() {
   })
   const [profileBusy, setProfileBusy] = useState(false)
   const [messageDraft, setMessageDraft] = useState('')
-  const [messageTargetId, setMessageTargetId] = useState<string | null>(null)
   const [messageBusy, setMessageBusy] = useState(false)
   const [groupName, setGroupName] = useState('')
   const [selectedGroupParticipantIds, setSelectedGroupParticipantIds] = useState<string[]>([])
@@ -495,14 +521,24 @@ function DashboardPage() {
   const [notificationBusy, setNotificationBusy] = useState(false)
 
   const refreshDashboard = async () => {
-    const [profileResponse, recommendationResponse, teamsResponse, communitiesResponse, conversationsResponse, eventsResponse, settingsResponse] = await Promise.all([
-      apiFetch<{ user?: { id?: string; fullName?: string; email?: string; isEmailVerified?: boolean; role?: string; collegeName?: string; degree?: string; branch?: string; academicYear?: string; bio?: string; skills?: string[]; interests?: string[] } }>('/auth/me'),
-      apiFetch<{ data?: Array<{ id: string; fullName: string; collegeName?: string; degree?: string; skills?: string[]; interests?: string[]; matchScore?: number; reasons?: string[] }> }>('/discovery/recommendations'),
-      apiFetch<{ data?: Array<{ id: string; name: string; projectTitle?: string; description?: string; technologies?: string[]; requiredRoles?: string[]; memberCount?: number }> }>('/teams'),
-      apiFetch<{ data?: Array<{ id: string; name: string; description?: string; category?: string; membershipPolicy?: string; visibility?: string; memberCount?: number; isMember?: boolean; isAdmin?: boolean; chatConversationId?: string }> }>('/communities'),
-      apiFetch<{ data?: Array<{ id: string; name?: string | null; isGroup?: boolean; communityId?: string | null; participants?: Array<{ id: string; fullName: string; role?: string }>; lastMessage?: { content?: string } | null }> }>('/messages/conversations'),
-      apiFetch<{ data?: DashboardEvent[] }>('/events'),
-      apiFetch<{ settings?: { eventAlerts?: boolean } }>('/users/me/notifications'),
+    const profileResponse = await apiFetch<{ user?: { id?: string; fullName?: string; email?: string; isEmailVerified?: boolean; role?: string; collegeName?: string; degree?: string; branch?: string; academicYear?: string; bio?: string; skills?: string[]; interests?: string[] } }>('/auth/me')
+    const optionalErrors: string[] = []
+    const fetchOptional = async <T,>(path: string, fallback: T): Promise<T> => {
+      try {
+        return await apiFetch<T>(path)
+      } catch (error) {
+        optionalErrors.push(`${path}: ${(error as Error).message}`)
+        return fallback
+      }
+    }
+    const [recommendationResponse, teamsResponse, communitiesResponse, conversationsResponse, eventsResponse, settingsResponse, connectionsResponse] = await Promise.all([
+      fetchOptional<{ data?: Array<{ id: string; fullName: string; collegeName?: string; degree?: string; skills?: string[]; interests?: string[]; matchScore?: number; reasons?: string[] }> }>('/discovery/recommendations', {}),
+      fetchOptional<{ data?: Array<{ id: string; name: string; projectTitle?: string; description?: string; technologies?: string[]; requiredRoles?: string[]; memberCount?: number; maxTeamSize?: number; isMember?: boolean }> }>('/teams', {}),
+      fetchOptional<{ data?: Array<{ id: string; name: string; description?: string; category?: string; membershipPolicy?: string; visibility?: string; memberCount?: number; isMember?: boolean; isAdmin?: boolean; chatConversationId?: string }> }>('/communities', {}),
+      fetchOptional<{ data?: Array<{ id: string; name?: string | null; isGroup?: boolean; communityId?: string | null; participants?: Array<{ id: string; fullName: string; role?: string }>; lastMessage?: { content?: string } | null }> }>('/messages/conversations', {}),
+      fetchOptional<{ data?: DashboardEvent[] }>('/events', {}),
+      fetchOptional<{ settings?: { eventAlerts?: boolean } }>('/users/me/notifications', {}),
+      fetchOptional<{ data?: DashboardConnection[] }>('/connections/requests', {}),
     ])
 
     setUser(profileResponse.user ?? null)
@@ -521,27 +557,34 @@ function DashboardPage() {
     const requests = await Promise.all((communitiesResponse.data ?? [])
       .filter((community) => community.isAdmin)
       .map(async (community) => {
-        const response = await apiFetch<{ data?: Array<{ id: string; userId: string; fullName: string }> }>(`/communities/${community.id}/requests`)
+        const response = await fetchOptional<{ data?: Array<{ id: string; userId: string; fullName: string }> }>(`/communities/${community.id}/requests`, {})
         return [community.id, response.data ?? []] as const
       }))
     setCommunityRequests(Object.fromEntries(requests))
     setConversations(conversationsResponse.data ?? [])
+    setConnections(connectionsResponse.data ?? [])
     setEvents(eventsResponse.data ?? [])
     setEventAlerts(settingsResponse.settings?.eventAlerts ?? true)
     if (profileResponse.user?.role === 'ADMIN') {
-      const pendingResponse = await apiFetch<{ data?: DashboardEvent[] }>('/events/pending')
+      const pendingResponse = await fetchOptional<{ data?: DashboardEvent[] }>('/events/pending', {})
       setPendingEvents(pendingResponse.data ?? [])
     } else {
       setPendingEvents([])
     }
+    setDashboardError(optionalErrors.length ? optionalErrors.join(' ') : '')
   }
 
   useEffect(() => {
     async function loadDashboard() {
       try {
         await refreshDashboard()
-      } catch {
-        navigate('/auth')
+        setDashboardError('')
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          navigate('/auth')
+        } else {
+          setDashboardError((error as Error).message)
+        }
       } finally {
         setLoading(false)
       }
@@ -580,14 +623,69 @@ function DashboardPage() {
   const handleConnect = async (targetUserId: string) => {
     try {
       setConnectingId(targetUserId)
-      await apiFetch('/connections/request', 'POST', { targetUserId, message: 'Would love to connect and collaborate on exciting student projects.' })
-      setRecommendations((current) => current.filter((person) => person.id !== targetUserId))
+      setActionNotice('')
+      await apiFetch('/connections/request', 'POST', { targetUserId, message: connectionMessage.trim() || undefined })
+      setActionNotice('Connection request sent.')
+      await refreshDashboard()
     } catch (error) {
       setActionNotice((error as Error).message)
     } finally {
       setConnectingId(null)
     }
   }
+
+  const handleRespondToConnection = async (requestId: string, action: 'ACCEPT' | 'DECLINE') => {
+    try {
+      setConnectionBusyId(requestId)
+      setActionNotice('')
+      await apiFetch('/connections/respond', 'POST', { requestId, action })
+      setActionNotice(action === 'ACCEPT' ? 'Connection accepted. You can now start a private chat.' : 'Connection request declined.')
+      await refreshDashboard()
+    } catch (error) {
+      setActionNotice((error as Error).message)
+    } finally {
+      setConnectionBusyId(null)
+    }
+  }
+
+  const handleMessageConnection = async (personId: string) => {
+    try {
+      setMessageBusy(true)
+      setChatNotice('')
+      const response = await apiFetch<{ data?: { id: string } }>('/messages/conversations', 'POST', {
+        participantIds: [personId],
+        isGroup: false,
+      })
+      if (!response.data?.id) throw new Error('The conversation was not created.')
+      setSelectedConversationId(response.data.id)
+      setActiveMessages([])
+      await refreshDashboard()
+      setChatNotice('Private conversation opened. Send the first message below.')
+    } catch (error) {
+      setChatNotice((error as Error).message)
+    } finally {
+      setMessageBusy(false)
+    }
+  }
+
+  const handleJoinTeam = async (teamId: string) => {
+    try {
+      setTeamBusyId(teamId)
+      setActionNotice('')
+      await apiFetch(`/teams/${teamId}/join`, 'POST')
+      setActionNotice('You joined the team.')
+      await refreshDashboard()
+    } catch (error) {
+      setActionNotice((error as Error).message)
+    } finally {
+      setTeamBusyId(null)
+    }
+  }
+
+  const getConnection = (personId: string) => connections.find((request) =>
+    (request.senderId === user?.id && request.receiverId === personId)
+    || (request.receiverId === user?.id && request.senderId === personId),
+  )
 
   const handleCreateTeam = async () => {
     try {
@@ -827,34 +925,6 @@ function DashboardPage() {
     }
   }
 
-  const handleSendMessage = async () => {
-    if (!messageTargetId || !messageDraft.trim()) return
-
-    try {
-      setMessageBusy(true)
-      const conversationResponse = await apiFetch<{ data?: { id: string } }>('/messages/conversations', 'POST', {
-        participantIds: [messageTargetId],
-        isGroup: false,
-      })
-      const targetConversationId = conversationResponse.data?.id
-      if (!targetConversationId) {
-        throw new Error('The conversation was not created.')
-      }
-      await apiFetch(`/messages/conversations/${targetConversationId}/messages`, 'POST', {
-        content: messageDraft.trim(),
-      })
-      setMessageDraft('')
-      setSelectedConversationId(targetConversationId)
-      const messagesResponse = await apiFetch<{ data?: ChatMessage[] }>(`/messages/conversations/${targetConversationId}/messages`)
-      setActiveMessages(messagesResponse.data ?? [])
-      await refreshDashboard()
-    } catch (error) {
-      setChatNotice((error as Error).message)
-    } finally {
-      setMessageBusy(false)
-    }
-  }
-
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-[#080b14] text-slate-100">Loading dashboard...</div>
   }
@@ -872,6 +942,35 @@ function DashboardPage() {
           </button>
         </div>
         {actionNotice && <p role="status" className="mb-5 rounded-xl border border-cyan-400/20 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-100">{actionNotice}</p>}
+        {dashboardError && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <span>Dashboard data could not be loaded: {dashboardError}</span>
+            <button type="button" onClick={() => void refreshDashboard().then(() => setDashboardError('')).catch((error) => setDashboardError((error as Error).message))} className="rounded-full border border-rose-300/40 px-3 py-1.5 font-semibold hover:bg-rose-500/20">
+              Retry
+            </button>
+          </div>
+        )}
+        <nav aria-label="Dashboard sections" className="sticky top-2 z-10 mb-6 flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/95 p-2 backdrop-blur">
+          {[
+            ['people', 'People'],
+            ['connections', 'Requests'],
+            ['workspace', 'Workspace'],
+            ['teams', 'Teams'],
+            ['communities', 'Clubs'],
+            ['messages', 'Messages'],
+            ['events', 'Events'],
+            ['profile', 'Profile'],
+          ].map(([id, label]) => (
+            <a
+              key={id}
+              href={id === 'events' ? '#workspace' : `#${id}`}
+              onClick={id === 'events' ? () => setQuickAction('events') : undefined}
+              className="shrink-0 rounded-full px-3 py-2 text-sm text-slate-200 transition hover:bg-violet-500/15 hover:text-white"
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
 
         <div className="grid gap-6 md:grid-cols-3">
           <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
@@ -889,7 +988,7 @@ function DashboardPage() {
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+          <div id="people" className="scroll-mt-24 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <p className="text-sm uppercase tracking-[0.22em] text-violet-300">Recommended people</p>
               <span className="rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-1 text-xs text-violet-200">{recommendations.length} matches</span>
@@ -907,14 +1006,11 @@ function DashboardPage() {
                         <p className="text-sm text-slate-400">{person.collegeName ?? 'Student'} • {person.degree ?? 'Open to collaboration'}</p>
                       </div>
                       <button
-                        onClick={() => {
-                          setMessageTargetId(person.id)
-                          void handleConnect(person.id)
-                        }}
-                        disabled={connectingId === person.id}
+                        onClick={() => void handleConnect(person.id)}
+                        disabled={connectingId === person.id || Boolean(getConnection(person.id))}
                         className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {connectingId === person.id ? 'Sending...' : 'Connect'}
+                        {connectingId === person.id ? 'Sending...' : getConnection(person.id)?.status === 'ACCEPT' ? 'Connected' : getConnection(person.id)?.status === 'DECLINE' ? 'Request declined' : getConnection(person.id) ? 'Request pending' : 'Connect'}
                       </button>
                     </div>
 
@@ -936,10 +1032,53 @@ function DashboardPage() {
                 ))}
               </div>
             )}
+
+            <div id="connections" className="mt-6 scroll-mt-24 rounded-2xl border border-violet-400/20 bg-violet-500/5 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-violet-100">Connection requests</p>
+                <span className="rounded-full border border-violet-300/20 px-2 py-1 text-xs text-violet-100">
+                  {connections.filter((request) => request.receiverId === user?.id && request.status === 'PENDING').length} to review
+                </span>
+              </div>
+              <label className="mt-3 block text-xs text-slate-300">
+                Note to include with your requests
+                <input value={connectionMessage} onChange={(event) => setConnectionMessage(event.target.value)} maxLength={300} className="mt-1 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white" />
+              </label>
+              <div className="mt-3 space-y-2">
+                {connections.filter((request) => request.status === 'PENDING' || request.status === 'ACCEPT').length === 0 ? (
+                  <p className="text-sm text-slate-400">New incoming and outgoing requests will appear here.</p>
+                ) : connections.filter((request) => request.status === 'PENDING' || request.status === 'ACCEPT').map((request) => {
+                  const incoming = request.receiverId === user?.id
+                  const otherPerson = incoming ? request.sender : request.receiver
+                  return (
+                    <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-white">{otherPerson?.fullName ?? 'NEXORA member'}</p>
+                        <p className="mt-1 text-xs text-slate-400">{request.status === 'ACCEPT' ? 'Connected' : incoming ? 'Wants to connect with you' : 'Request sent'}{request.message ? ` · “${request.message}”` : ''}</p>
+                      </div>
+                      {request.status === 'ACCEPT' ? (
+                        <button type="button" onClick={() => void handleMessageConnection(otherPerson?.id ?? (incoming ? request.senderId : request.receiverId))} disabled={messageBusy} className="rounded-full border border-cyan-400/30 px-3 py-1.5 text-xs text-cyan-100 disabled:opacity-50">
+                          {messageBusy ? 'Opening...' : 'Message'}
+                        </button>
+                      ) : incoming ? (
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => void handleRespondToConnection(request.id, 'ACCEPT')} disabled={connectionBusyId === request.id} className="rounded-full bg-emerald-400/15 px-3 py-1.5 text-xs text-emerald-100 disabled:opacity-50">
+                            {connectionBusyId === request.id ? 'Saving...' : 'Accept'}
+                          </button>
+                          <button type="button" onClick={() => void handleRespondToConnection(request.id, 'DECLINE')} disabled={connectionBusyId === request.id} className="rounded-full border border-rose-400/30 px-3 py-1.5 text-xs text-rose-100 disabled:opacity-50">
+                            Decline
+                          </button>
+                        </div>
+                      ) : <span className="text-xs text-amber-200">Pending</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-6">
-            <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+            <div id="workspace" className="scroll-mt-24 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
               <p className="text-sm uppercase tracking-[0.22em] text-cyan-300">Quick actions</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 {[
@@ -978,11 +1117,13 @@ function DashboardPage() {
                               <p className="font-semibold text-white">{student.fullName}</p>
                               <p className="text-xs text-slate-400">{student.collegeName ?? 'Student'} • {student.degree ?? 'Open to collaboration'}</p>
                             </div>
-                            <button type="button" onClick={() => {
-                              setMessageTargetId(student.id)
-                              void handleConnect(student.id)
-                            }} className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-3 py-1.5 text-xs font-semibold text-slate-950">
-                              Connect
+                            <button
+                              type="button"
+                              onClick={() => void handleConnect(student.id)}
+                              disabled={connectingId === student.id || Boolean(getConnection(student.id))}
+                              className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-3 py-1.5 text-xs font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {connectingId === student.id ? 'Sending...' : getConnection(student.id)?.status === 'ACCEPT' ? 'Connected' : getConnection(student.id)?.status === 'DECLINE' ? 'Request declined' : getConnection(student.id) ? 'Request pending' : 'Connect'}
                             </button>
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -1140,7 +1281,7 @@ function DashboardPage() {
                 </div>
               )}
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
+              <div id="profile" className="mt-4 scroll-mt-24 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                 <p className="text-sm uppercase tracking-[0.2em] text-violet-300">Profile</p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <input value={profileDraft.collegeName} onChange={(event) => setProfileDraft((current) => ({ ...current, collegeName: event.target.value }))} className="rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white" placeholder="College" />
@@ -1158,18 +1299,6 @@ function DashboardPage() {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/60 p-3">
-                <p className="text-sm uppercase tracking-[0.2em] text-cyan-300">Quick message</p>
-                <div className="mt-3 flex gap-2">
-                  <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} className="flex-1 rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2 text-sm text-white" placeholder="Type a message to your match" />
-                  <button type="button" onClick={handleSendMessage} disabled={!messageTargetId || !messageDraft.trim() || messageBusy} className="rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-60">
-                    {messageBusy ? 'Sending...' : 'Send'}
-                  </button>
-                </div>
-                {messageTargetId && (
-                  <p className="mt-2 text-xs text-violet-200">Drafting message to a selected match.</p>
-                )}
-              </div>
             </div>
             <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
               <p className="text-sm uppercase tracking-[0.22em] text-violet-300">Status</p>
@@ -1179,7 +1308,7 @@ function DashboardPage() {
         </div>
 
         <div className="mt-8 grid gap-6 xl:grid-cols-3">
-          <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+          <div id="teams" className="scroll-mt-24 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm uppercase tracking-[0.22em] text-violet-300">Teams</p>
               <span className="text-xs text-slate-400">{teams.length} live</span>
@@ -1192,7 +1321,7 @@ function DashboardPage() {
                   <div key={team.id} className="rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold text-white">{team.name}</p>
-                      <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-200">{team.memberCount ?? 1} members</span>
+                      <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-200">{team.memberCount ?? 1}/{team.maxTeamSize ?? 5} members</span>
                     </div>
                     <p className="mt-1 text-sm text-slate-300">{team.projectTitle ?? 'Open project idea'}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
@@ -1200,13 +1329,21 @@ function DashboardPage() {
                         <span key={tech} className="rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-1 text-[10px] text-violet-200">{tech}</span>
                       ))}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleJoinTeam(team.id)}
+                      disabled={team.isMember || teamBusyId === team.id || (team.memberCount ?? 0) >= (team.maxTeamSize ?? 5)}
+                      className="mt-3 rounded-full border border-cyan-400/30 px-3 py-1.5 text-xs text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {team.isMember ? 'Joined' : teamBusyId === team.id ? 'Joining...' : (team.memberCount ?? 0) >= (team.maxTeamSize ?? 5) ? 'Team full' : 'Join team'}
+                    </button>
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+          <div id="communities" className="scroll-mt-24 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm uppercase tracking-[0.22em] text-cyan-300">Communities</p>
               <span className="text-xs text-slate-400">{communities.length} active</span>
@@ -1262,7 +1399,7 @@ function DashboardPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+          <div id="messages" className="scroll-mt-24 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
             <div className="mb-4 flex items-center justify-between">
               <p className="text-sm uppercase tracking-[0.22em] text-violet-300">Messages</p>
               <span className="text-xs text-slate-400">{conversations.length} chats</span>
