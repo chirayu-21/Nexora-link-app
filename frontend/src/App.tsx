@@ -31,7 +31,7 @@ const testimonials = [
   { quote: 'The event discovery flow gives students a cleaner way to find opportunities without the clutter of random campus spam.', author: 'Meher, design student' },
 ]
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'https://nexora-api-xl76.onrender.com').replace(/\/+$/, '')
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'https://nexora-api-xl76.onrender.com')).replace(/\/+$/, '')
 
 async function apiFetch<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   let response: Response

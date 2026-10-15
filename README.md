@@ -142,9 +142,9 @@ The backend is a separate service and must also be deployed and configured for p
 
 After Render creates the API service:
 
-1. The frontend defaults to `https://nexora-api-xl76.onrender.com`. If your API URL changes, set the Vercel frontend environment variable `VITE_API_BASE_URL` to the new service origin (without `/api` or a trailing slash), then redeploy the frontend.
+1. The frontend defaults to `https://nexora-api-xl76.onrender.com` in production and uses the Vite `/api` proxy in local development. If your production API URL changes, set the Vercel frontend environment variable `VITE_API_BASE_URL` to the new service origin (without `/api` or a trailing slash), then redeploy the frontend.
 2. The Blueprint sets `APP_BASE_URL` to `https://nexoralink.vercel.app` so credentialed API requests from the frontend pass CORS checks. For a different frontend URL, update that value in Render. For multiple allowed origins, provide a comma-separated list.
-3. Configure `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` in the Render service using a production OTP delivery provider. Registration and login both require OTP delivery in production; these credentials are not included in the repository and the auth flows will return an error until they are set.
+3. Configure OTP delivery in the Render service. Either set `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` for a webhook provider, or configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` to send OTPs directly by email. The existing SMTP variables are also used for event reminders. Registration and login require working OTP delivery in production; credentials are not included in the repository.
 
 The frontend sends session cookies with API requests. Production backend cookies use `SameSite=None; Secure` so they can be used when the API is hosted on a different origin.
 

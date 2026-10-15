@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto'
+import nodemailer from 'nodemailer'
 import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../../config/env.js'
@@ -72,7 +73,28 @@ function findUserByIdentifier(identifier: string) {
 }
 async function deliverOtp(user: { email: string; mobileNumber?: string | null; fullName?: string }, otp: string, purpose: 'registration' | 'login') {
   if (env.nodeEnv !== 'production') return
-  if (!env.otpDeliveryUrl || !env.otpDeliveryToken) throw new Error('OTP delivery is not configured. Set OTP_DELIVERY_URL and OTP_DELIVERY_TOKEN before production use.')
+  if (!env.otpDeliveryUrl || !env.otpDeliveryToken) {
+    if (!env.smtpHost || !env.smtpUser || !env.smtpPassword || !env.smtpFrom) {
+      throw new Error('OTP delivery is not configured. Set OTP_DELIVERY_URL and OTP_DELIVERY_TOKEN, or configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM.')
+    }
+
+    const transport = nodemailer.createTransport({
+      host: env.smtpHost,
+      port: env.smtpPort,
+      secure: env.smtpPort === 465,
+      auth: { user: env.smtpUser, pass: env.smtpPassword },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+    })
+    await transport.sendMail({
+      from: env.smtpFrom,
+      to: user.email,
+      subject: purpose === 'registration' ? 'Verify your NEXORA account' : 'Your NEXORA login code',
+      text: `Your NEXORA verification code is ${otp}. It expires in 5 minutes. If you did not request this code, you can ignore this email.`,
+    })
+    return
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
   try {
@@ -96,7 +118,7 @@ router.post('/register', async (req,res,next) => {
     if (existing) return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'})
     const otp=issueOtp()
     stage = 'deliver-registration-otp'
-    try { await deliverOtp({email,mobileNumber,fullName:data.fullName},otp,'registration') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
+    try { await deliverOtp({email,mobileNumber,fullName:data.fullName},otp,'registration') } catch (error) { if (env.nodeEnv==='production') { logAuthFailure('register', stage, error); return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please check OTP delivery settings or try again later.'}) } throw error }
     stage = 'create-user'
     let user
     try { user=await prisma.user.create({data:{fullName:data.fullName,email,mobileNumber,age:data.age,passwordHash:await bcrypt.hash(data.password,12),collegeName:data.collegeName,degree:data.degree,branch:data.branch,academicYear:data.academicYear,skills:data.skills,interests:data.interests,otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0,verificationLevel:'UNVERIFIED'}}) } catch (error) { if (env.nodeEnv==='production') return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'}); throw error }
@@ -121,7 +143,7 @@ router.post('/login', async (req,res,next) => {
     if (user.isActive === false) return res.status(403).json({error:'account_disabled',message:'This account is currently disabled.'})
     const otp=issueOtp()
     stage = 'deliver-login-otp'
-    try { await deliverOtp({email:user.email,mobileNumber:user.mobileNumber,fullName:user.fullName},otp,'login') } catch (error) { if (env.nodeEnv==='production') return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please try again later.'}); throw error }
+    try { await deliverOtp({email:user.email,mobileNumber:user.mobileNumber,fullName:user.fullName},otp,'login') } catch (error) { if (env.nodeEnv==='production') { logAuthFailure('login', stage, error); return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please check OTP delivery settings or try again later.'}) } throw error }
     stage = 'save-login-otp'
     await prisma.user.update({where:{id:user.id},data:{otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0}})
     return res.json({success:true,message:'Password accepted. Enter the one-time code to complete login.',otp:env.nodeEnv==='development'?otp:undefined})
