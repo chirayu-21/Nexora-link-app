@@ -144,7 +144,7 @@ function LandingPage() {
               </div>
 
               <div className="mt-10 flex flex-wrap items-center gap-5 text-sm text-slate-300">
-                <span>OTP-verified accounts</span>
+                <span>Password-protected accounts</span>
                 <span className="h-1 w-1 rounded-full bg-slate-500" />
                 <span>Student team formation</span>
                 <span className="h-1 w-1 rounded-full bg-slate-500" />
@@ -357,33 +357,24 @@ function LandingPage() {
 function AuthPage() {
   const navigate = useNavigate()
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [stage, setStage] = useState<'form' | 'otp'>('form')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [otp, setOtp] = useState('')
-  const [devOtp, setDevOtp] = useState('')
   const [form, setForm] = useState({ fullName:'', email:'', mobileNumber:'', password:'', age:'', collegeName:'', degree:'', branch:'', academicYear:'', skills:'', interests:'', identifier:'' })
   const handleChange = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }))
-  const switchMode = (next: 'login' | 'register') => { setMode(next); setStage('form'); setError(''); setMessage(''); setOtp(''); setDevOtp('') }
+  const switchMode = (next: 'login' | 'register') => { setMode(next); setError('') }
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setError(''); setMessage('')
+    event.preventDefault(); setBusy(true); setError('')
     try {
       const payload = mode === 'register' ? { fullName:form.fullName.trim(), email:form.email.trim().toLowerCase(), mobileNumber:form.mobileNumber.replace(/[\s()-]/g,''), password:form.password, age:Number(form.age), collegeName:form.collegeName.trim(), degree:form.degree.trim(), branch:form.branch.trim(), academicYear:form.academicYear.trim(), skills:form.skills ? form.skills.split(',').map(v=>v.trim()).filter(Boolean):[], interests:form.interests ? form.interests.split(',').map(v=>v.trim()).filter(Boolean):[] } : { identifier:form.identifier.trim(), password:form.password }
-      const result = await apiFetch<{success?:boolean; message?:string; otp?:string}>(mode === 'register' ? '/auth/register' : '/auth/login','POST',payload)
-      setStage('otp'); setDevOtp(result.otp ?? ''); setMessage(result.message ?? 'Enter the one-time code to continue.')
+      await apiFetch(mode === 'register' ? '/auth/register' : '/auth/login','POST',payload)
+      navigate('/dashboard')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
-  }
-  const verifyOtp = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setBusy(true); setError(''); setMessage('')
-    try { const result = await apiFetch<{success?:boolean;message?:string}>('/auth/verify-otp','POST',{identifier:mode==='register'?form.email.trim().toLowerCase():form.identifier.trim(),otp}); setMessage(result.message ?? 'Verification successful.'); navigate('/dashboard') }
-    catch(e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   const inputClass = 'nexora-input w-full rounded-xl px-4 py-3 text-sm text-white outline-none transition'
   return <div className="auth-shell flex min-h-screen items-center justify-center px-4 py-10 text-slate-100"><div className="auth-orb auth-orb-one"/><div className="auth-orb auth-orb-two"/><div className="auth-card relative z-10 w-full max-w-3xl rounded-[2rem] p-6 sm:p-9">
-    <div className="mb-8 flex items-start justify-between gap-4"><div><Link to="/" className="mb-5 inline-flex items-center gap-3"><span className="brand-glyph">N</span><span className="text-sm font-black tracking-[.28em]">NEXORA</span></Link><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{stage==='otp'?'Verify it’s you':mode==='login'?'Welcome back.':'Create your orbit.'}</h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">{stage==='otp'?'Enter the one-time passcode to securely finish authentication.':'A smarter space for student builders, teams, and big ideas.'}</p></div><Link to="/" className="text-sm text-slate-400 hover:text-cyan-200">← Home</Link></div>
-    {stage==='form' && <div className="mb-7 flex rounded-2xl border border-white/10 bg-black/20 p-1.5"><button type="button" onClick={()=>switchMode('login')} className={`auth-tab ${mode==='login'?'active':''}`}>Log in</button><button type="button" onClick={()=>switchMode('register')} className={`auth-tab ${mode==='register'?'active':''}`}>Create account</button></div>}
-    {stage==='form' ? <form onSubmit={handleSubmit} className="space-y-4">{mode==='register' ? <div className="grid gap-4 sm:grid-cols-2">
+    <div className="mb-8 flex items-start justify-between gap-4"><div><Link to="/" className="mb-5 inline-flex items-center gap-3"><span className="brand-glyph">N</span><span className="text-sm font-black tracking-[.28em]">NEXORA</span></Link><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{mode==='login'?'Welcome back.':'Create your orbit.'}</h1><p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">A smarter space for student builders, teams, and big ideas.</p></div><Link to="/" className="text-sm text-slate-400 hover:text-cyan-200">← Home</Link></div>
+    <div className="mb-7 flex rounded-2xl border border-white/10 bg-black/20 p-1.5"><button type="button" onClick={()=>switchMode('login')} className={`auth-tab ${mode==='login'?'active':''}`}>Log in</button><button type="button" onClick={()=>switchMode('register')} className={`auth-tab ${mode==='register'?'active':''}`}>Create account</button></div>
+    <form onSubmit={handleSubmit} className="space-y-4">{mode==='register' ? <div className="grid gap-4 sm:grid-cols-2">
       <label className="field-label">Full name<input autoComplete="name" className={inputClass} value={form.fullName} onChange={e=>handleChange('fullName',e.target.value)} placeholder="Your full name" required minLength={2} maxLength={80}/></label>
       <label className="field-label">Email address<input type="email" autoComplete="email" className={inputClass} value={form.email} onChange={e=>handleChange('email',e.target.value)} placeholder="you@college.edu" required/></label>
       <label className="field-label">Mobile number<input type="tel" autoComplete="tel" inputMode="tel" pattern="[+0-9 ()-]{8,20}" className={inputClass} value={form.mobileNumber} onChange={e=>handleChange('mobileNumber',e.target.value)} placeholder="+91 98765 43210" required/></label>
@@ -394,8 +385,8 @@ function AuthPage() {
       <label className="field-label sm:col-span-2">Skills <span className="optional">comma separated</span><input className={inputClass} value={form.skills} onChange={e=>handleChange('skills',e.target.value)} placeholder="Python, React, UI/UX"/></label>
     </div> : <label className="field-label">Email or mobile number<input autoComplete="username" className={inputClass} value={form.identifier} onChange={e=>handleChange('identifier',e.target.value)} placeholder="you@example.com or +91…" required/></label>}
     <label className="field-label">Password<input type="password" autoComplete={mode==='register'?'new-password':'current-password'} className={inputClass} value={form.password} onChange={e=>handleChange('password',e.target.value)} placeholder="At least 12 characters recommended" required minLength={8} maxLength={128}/></label>
-    {mode==='register' && <p className="text-xs leading-5 text-slate-500">Use a unique password. NEXORA stores a one-way password hash, never a readable password.</p>}{error&&<p role="alert" className="status-error">{error}</p>}{message&&<p role="status" className="status-ok">{message}</p>}
-    <button type="submit" disabled={busy} className="neon-button w-full rounded-xl px-5 py-3.5 font-bold text-slate-950 disabled:opacity-50">{busy?'Securing your session…':mode==='login'?'Continue securely ↗':'Create account ↗'}</button><p className="text-center text-xs text-slate-500">Protected session · OTP verification · Rate-limited authentication</p></form> : <form onSubmit={verifyOtp} className="space-y-5">{message&&<p role="status" className="status-ok">{message}</p>}{devOtp&&<p className="status-ok">Development OTP: <strong className="tracking-[.25em]">{devOtp}</strong><span className="mt-1 block text-xs">Shown only in development. Configure a real delivery provider before production.</span></p>}<label className="field-label">6-digit one-time password<input className={`${inputClass} otp-input`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} value={otp} onChange={e=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="••••••" required/></label>{error&&<p role="alert" className="status-error">{error}</p>}<button type="submit" disabled={busy||otp.length!==6} className="neon-button w-full rounded-xl px-5 py-3.5 font-bold text-slate-950 disabled:opacity-50">{busy?'Verifying…':'Verify & enter NEXORA ↗'}</button><button type="button" onClick={()=>{setStage('form');setOtp('');setError('');setMessage('')}} className="w-full py-2 text-sm text-slate-400 hover:text-white">Back to details</button></form>}
+    {mode==='register' && <p className="text-xs leading-5 text-slate-500">Use a unique password. NEXORA stores a one-way password hash, never a readable password.</p>}{error&&<p role="alert" className="status-error">{error}</p>}
+    <button type="submit" disabled={busy} className="neon-button w-full rounded-xl px-5 py-3.5 font-bold text-slate-950 disabled:opacity-50">{busy?'Signing you in…':mode==='login'?'Log in ↗':'Create account ↗'}</button><p className="text-center text-xs text-slate-500">Password-protected session · Rate-limited authentication</p></form>
   </div></div>
 }
 

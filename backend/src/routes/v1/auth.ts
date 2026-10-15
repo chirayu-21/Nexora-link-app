@@ -1,6 +1,5 @@
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto'
-import nodemailer from 'nodemailer'
 import { Router } from 'express'
 import { z } from 'zod'
 import { env } from '../../config/env.js'
@@ -26,7 +25,6 @@ export const registerSchema = z.object({
   interests: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
 })
 export const loginSchema = z.object({ identifier: z.string().trim().min(3).max(254), password: passwordSchema })
-export const verifyOtpSchema = z.object({ identifier: z.string().trim().min(3).max(254), otp: z.string().regex(/^\d{6}$/) })
 export const verifyEmailSchema = z.object({ token: z.string().min(8) })
 export const forgotPasswordSchema = z.object({ email: emailSchema })
 export const resetPasswordSchema = z.object({ email: emailSchema, token: z.string().min(8), password: passwordSchema })
@@ -34,7 +32,7 @@ export const resetPasswordSchema = z.object({ email: emailSchema, token: z.strin
 // In-memory protection is a single-process safety net; use a shared Redis limiter in production clusters.
 const attempts = new Map<string, { count: number; resetAt: number }>()
 router.use((req, res, next) => {
-  if (!['POST'].includes(req.method) || !['/register','/login','/verify-otp'].includes(req.path)) return next()
+  if (!['POST'].includes(req.method) || !['/register','/login'].includes(req.path)) return next()
   const key = `${req.ip}:${req.path}`; const now = Date.now(); const current = attempts.get(key)
   if (attempts.size > 5000) for (const [entryKey, entry] of attempts) if (entry.resetAt < now) attempts.delete(entryKey)
   if (!current || current.resetAt < now) attempts.set(key, { count: 1, resetAt: now + 15 * 60_000 })
@@ -51,15 +49,12 @@ function sanitizeUser(user: any) {
     verificationLevel:user.verificationLevel, role:user.role, createdAt:user.createdAt, updatedAt:user.updatedAt }
 }
 function setSessionCookie(res: any, token: string) { res.cookie('nexora_session',token,{httpOnly:true,sameSite:env.nodeEnv==='production'?'none':'lax',secure:env.nodeEnv==='production',maxAge:7*24*60*60*1000,path:'/'}) }
-function otpHash(otp: string) { return crypto.createHmac('sha256',env.sessionSecret).update(otp).digest('hex') }
-function safeEqualHex(a: string, b: string) { const aa=Buffer.from(a,'hex'), bb=Buffer.from(b,'hex'); return aa.length===bb.length && crypto.timingSafeEqual(aa,bb) }
 async function createSessionForUser(userId: string, req: any) {
   const sessionToken=crypto.randomBytes(32).toString('hex'); const tokenHash=crypto.createHash('sha256').update(sessionToken).digest('hex')
   const expiresAt=new Date(Date.now()+7*24*60*60*1000)
   await prisma.session.create({data:{userId,tokenHash,expiresAt,userAgent:req.headers['user-agent'] ?? null,ipAddress:req.ip ?? null}})
   return {sessionToken,expiresAt}
 }
-function issueOtp() { return String(crypto.randomInt(0,1_000_000)).padStart(6,'0') }
 function logAuthFailure(operation: string, stage: string, error: unknown) {
   const name = error instanceof Error ? error.name : typeof error
   const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
@@ -71,42 +66,6 @@ function findUserByIdentifier(identifier: string) {
   const value=identifier.trim(); const email=value.toLowerCase(); const phone=normalizePhone(value)
   return prisma.user.findFirst({where:{OR:[{email},{mobileNumber:phone}]}})
 }
-async function deliverOtp(user: { email: string; mobileNumber?: string | null; fullName?: string }, otp: string, purpose: 'registration' | 'login') {
-  if (env.nodeEnv !== 'production') return
-  if (!env.otpDeliveryUrl || !env.otpDeliveryToken) {
-    if (!env.smtpHost || !env.smtpUser || !env.smtpPassword || !env.smtpFrom) {
-      throw new Error('OTP delivery is not configured. Set OTP_DELIVERY_URL and OTP_DELIVERY_TOKEN, or configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM.')
-    }
-
-    const transport = nodemailer.createTransport({
-      host: env.smtpHost,
-      port: env.smtpPort,
-      secure: env.smtpPort === 465,
-      auth: { user: env.smtpUser, pass: env.smtpPassword },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 8000,
-    })
-    await transport.sendMail({
-      from: env.smtpFrom,
-      to: user.email,
-      subject: purpose === 'registration' ? 'Verify your NEXORA account' : 'Your NEXORA login code',
-      text: `Your NEXORA verification code is ${otp}. It expires in 5 minutes. If you did not request this code, you can ignore this email.`,
-    })
-    return
-  }
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
-  try {
-    const response = await fetch(env.otpDeliveryUrl, {
-      method: 'POST', signal: controller.signal,
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.otpDeliveryToken}` },
-      body: JSON.stringify({ email: user.email, mobileNumber: user.mobileNumber ?? null, fullName: user.fullName ?? null, otp, purpose, expiresInSeconds: 300 }),
-    })
-    if (!response.ok) throw new Error(`OTP delivery provider returned HTTP ${response.status}`)
-  } finally { clearTimeout(timeout) }
-}
-
 router.post('/register', async (req,res,next) => {
   let stage = 'validate-registration'
   try {
@@ -116,16 +75,16 @@ router.post('/register', async (req,res,next) => {
     stage = 'lookup-existing-account'
     const existing=await prisma.user.findFirst({where:{OR:[{email},{mobileNumber}]}})
     if (existing) return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'})
-    const otp=issueOtp()
-    stage = 'deliver-registration-otp'
-    try { await deliverOtp({email,mobileNumber,fullName:data.fullName},otp,'registration') } catch (error) { if (env.nodeEnv==='production') { logAuthFailure('register', stage, error); return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please check OTP delivery settings or try again later.'}) } throw error }
     stage = 'create-user'
     let user
-    try { user=await prisma.user.create({data:{fullName:data.fullName,email,mobileNumber,age:data.age,passwordHash:await bcrypt.hash(data.password,12),collegeName:data.collegeName,degree:data.degree,branch:data.branch,academicYear:data.academicYear,skills:data.skills,interests:data.interests,otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0,verificationLevel:'UNVERIFIED'}}) } catch (error) { if (env.nodeEnv==='production') return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'}); throw error }
+    try { user=await prisma.user.create({data:{fullName:data.fullName,email,mobileNumber,age:data.age,passwordHash:await bcrypt.hash(data.password,12),collegeName:data.collegeName,degree:data.degree,branch:data.branch,academicYear:data.academicYear,skills:data.skills,interests:data.interests,verificationLevel:'UNVERIFIED'}}) } catch (error) { if (env.nodeEnv==='production') return res.status(409).json({error:'account_exists',message:'An account with this email or mobile number already exists.'}); throw error }
     stage = 'create-default-settings'
     await prisma.userPrivacySettings.create({data:{userId:user.id,profileVisibility:'PUBLIC'}})
     await prisma.userNotificationSettings.create({data:{userId:user.id}})
-    return res.status(201).json({success:true,message:'Account created. Verify the one-time code to finish registration.',otp:env.nodeEnv==='development'?otp:undefined})
+    stage = 'create-session'
+    const {sessionToken}=await createSessionForUser(user.id,req)
+    setSessionCookie(res,sessionToken)
+    return res.status(201).json({success:true,user:sanitizeUser(user),message:'Account created successfully.'})
   } catch (error) {
     logAuthFailure('register', stage, error)
     next(error)
@@ -141,29 +100,14 @@ router.post('/login', async (req,res,next) => {
     const user=await findUserByIdentifier(parsed.data.identifier)
     if (!user || !user.passwordHash || !(await bcrypt.compare(parsed.data.password,user.passwordHash))) return res.status(401).json({error:'invalid_credentials',message:'Invalid email/mobile number or password.'})
     if (user.isActive === false) return res.status(403).json({error:'account_disabled',message:'This account is currently disabled.'})
-    const otp=issueOtp()
-    stage = 'deliver-login-otp'
-    try { await deliverOtp({email:user.email,mobileNumber:user.mobileNumber,fullName:user.fullName},otp,'login') } catch (error) { if (env.nodeEnv==='production') { logAuthFailure('login', stage, error); return res.status(503).json({error:'otp_delivery_failed',message:'We could not send a verification code. Please check OTP delivery settings or try again later.'}) } throw error }
-    stage = 'save-login-otp'
-    await prisma.user.update({where:{id:user.id},data:{otpCodeHash:otpHash(otp),otpExpiresAt:new Date(Date.now()+5*60_000),otpAttempts:0}})
-    return res.json({success:true,message:'Password accepted. Enter the one-time code to complete login.',otp:env.nodeEnv==='development'?otp:undefined})
+    stage = 'create-session'
+    const {sessionToken}=await createSessionForUser(user.id,req)
+    setSessionCookie(res,sessionToken)
+    return res.json({success:true,user:sanitizeUser(user),message:'Login successful.'})
   } catch (error) {
     logAuthFailure('login', stage, error)
     next(error)
   }
-})
-
-router.post('/verify-otp', async (req,res) => {
-  const parsed=verifyOtpSchema.safeParse(req.body)
-  if (!parsed.success) return res.status(400).json({error:'validation_error',message:'Enter the 6-digit one-time code.'})
-  const user=await findUserByIdentifier(parsed.data.identifier)
-  if (!user || !user.otpCodeHash || !user.otpExpiresAt || user.otpExpiresAt < new Date() || user.otpAttempts >= 5) return res.status(400).json({error:'invalid_otp',message:'The code is invalid or expired. Start again to request a new code.'})
-  const valid=safeEqualHex(user.otpCodeHash,otpHash(parsed.data.otp))
-  if (!valid) { await prisma.user.update({where:{id:user.id},data:{otpAttempts:{increment:1}}}); return res.status(400).json({error:'invalid_otp',message:'The code is incorrect.'}) }
-  await prisma.user.update({where:{id:user.id},data:{otpCodeHash:null,otpExpiresAt:null,otpAttempts:0,isEmailVerified:true,verificationLevel:'VERIFIED_EMAIL'}})
-  const {sessionToken}=await createSessionForUser(user.id,req); setSessionCookie(res,sessionToken)
-  const refreshed=await prisma.user.findUnique({where:{id:user.id}})
-  return res.json({success:true,user:sanitizeUser(refreshed ?? user),message:'Verification successful. Welcome to NEXORA.'})
 })
 
 router.get('/me',requireAuth,async(req,res)=>res.json({success:true,user:sanitizeUser(req.user)}))

@@ -1,21 +1,15 @@
 # NEXORA security notes
 
-## Changes in this update
+## Authentication
 
-- Reworked the login and registration experience into a responsive dark/neon interface with accessible labels, focus states, OTP entry, and clearer errors.
-- Registration now requires name, normalized mobile number, email, age, college/university, and password. Email and mobile are unique database identities.
-- Login accepts either email or mobile number and password.
-- Passwords are stored only as bcrypt hashes (cost 12). Passwords and OTPs must never be written to a credential export, plaintext file, application log, or admin-readable report. Administrators do not need to recover user passwords; use password reset instead.
-- Added short-lived, HMAC-hashed six-digit OTP challenges, expiry, failed-attempt limits, and an OTP verification step before a session is issued.
-- Added a per-IP auth rate-limit safety net, hardened request-body limits, disabled `X-Powered-By`, and generic production error responses.
-- Production mode refuses weak session secrets and mock-data mode, and database connection failures no longer silently switch production traffic to mock data.
-- Direct and group messages are available only to conversation participants. Every club has its own member-scoped chat; leaving a club removes the account from that chat. Event reminder email delivery is opt-in, requires a verified email, and uses separately configured SMTP credentials.
+- Registration requires name, normalized mobile number, email, age, college/university, and password. Email and mobile are unique database identities.
+- Login accepts an email address or mobile number and password.
+- Registration and login issue a seven-day HTTP-only session after password authentication; there is no OTP challenge.
+- Email addresses are not verified during registration. Email-dependent features such as event reminders require a separately verified email.
+- Passwords are stored only as bcrypt hashes (cost 12). Never log passwords, session tokens, or reset tokens.
+- Password-only authentication does not provide a second factor. Encourage unique, strong passwords and consider adding MFA before handling sensitive accounts.
 
-## OTP delivery
-
-Development mode returns an OTP in the API response so the local flow can be tested. This is strictly for local development.
-
-Production requires an `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` integration. The backend POSTs the user's email/mobile, OTP, purpose, and five-minute expiry to that configured endpoint with a Bearer token. The endpoint must deliver the OTP over a verified email/SMS channel, never log the OTP, and return 2xx only when it accepts the delivery. Keep the endpoint and token in the deployment secret manager. The application fails closed when delivery is not configured.
+Authentication requests have a per-IP rate-limit safety net, bounded request bodies, and generic production error responses. The in-memory limiter is only a single-process baseline; use shared rate limiting for multi-instance deployments.
 
 ## Private messaging and event reminder emails
 
@@ -28,12 +22,12 @@ Event reminders are sent by the backend scheduler to verified users who marked a
 1. Apply Prisma migrations and ensure PostgreSQL is reachable over TLS where supported.
 2. Run `npx prisma generate` after installing dependencies; run `npx prisma migrate deploy` in deployment.
 3. Use a unique random `SESSION_SECRET` with at least 32 characters. Never reuse the example value.
-4. Set `NODE_ENV=production`, `USE_MOCK_DATA=false`, `APP_BASE_URL` to the exact trusted frontend origin, and configure the OTP delivery adapter.
+4. Set `NODE_ENV=production`, `USE_MOCK_DATA=false`, and `APP_BASE_URL` to the exact trusted frontend origin.
 5. Use a least-privilege database account, encrypted disks/backups, restricted network access, managed secret storage, and regular patching/restore tests.
-6. Configure a shared Redis-backed rate limiter for multi-instance deployments; the included in-memory limiter is only a single-process baseline.
-7. Add provider-side abuse limits, OTP resend cooldowns, monitoring/alerting, CSRF protections appropriate to the deployment topology, and security tests before public launch.
+6. Configure a shared Redis-backed rate limiter for multi-instance deployments.
+7. Add monitoring/alerting, CSRF protections appropriate to the deployment topology, and security tests before public launch.
 8. Existing users have nullable phone/age columns after migration; prompt them to add missing data and verify/backfill it before treating legacy accounts as fully complete.
 
 ## Important limitations
 
-No application can guarantee that “no hacker can attack” a website. This update adds defensive controls, but it is not a substitute for a professional security review, dependency audit, penetration test, and production hardening. OTP delivery depends on the external provider you configure. Do not deploy until that provider and its abuse protections have been tested.
+No application can guarantee that “no hacker can attack” a website. This update adds defensive controls, but it is not a substitute for a professional security review, dependency audit, penetration test, and production hardening. Keep SMTP credentials in the hosting provider's secret manager and test reminder delivery before relying on it.

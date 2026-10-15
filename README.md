@@ -7,11 +7,11 @@ NEXORA is a cross-college student collaboration platform for finding hackathon t
 - **Frontend:** React, TypeScript, Vite, Tailwind CSS
 - **Backend:** Express, TypeScript, Prisma
 - **Database:** PostgreSQL
-- **Authentication:** OTP-verified accounts and server-side sessions
+- **Authentication:** Password-based accounts and server-side sessions
 
 ## Features
 
-- Student registration and login with OTP verification.
+- Student registration and login using email/mobile number and password.
 - Student profiles, search, and skill/interest-based collaborator recommendations.
 - Connection requests and private direct messaging.
 - Private group chats with participant-only message access.
@@ -130,7 +130,7 @@ Run from the relevant `backend` or `frontend` directory:
 
 ## Authentication and deployment
 
-In development, the API returns the OTP in its response for local testing. This is not suitable for production. Production OTP delivery requires a configured and verified delivery adapter. Review [SECURITY.md](./SECURITY.md) before deploying; it documents required production settings and remaining security work.
+Login and registration use the account password and establish a session directly; there is no OTP verification step. Email addresses are not verified during registration, so email-dependent features such as event reminders remain unavailable until a separate email verification flow is implemented. Review [SECURITY.md](./SECURITY.md) before deploying; it documents required production settings and remaining security work.
 
 Upcoming-event reminders are sent only for published events that a verified user marked as interesting while event alerts are enabled. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` on the backend to enable reminders. Without these, the API remains available but logs that email reminders are disabled. Event submissions require an admin to publish them before they appear in discovery. Admin roles must be assigned through a trusted operational process; there is no public role-elevation endpoint.
 
@@ -144,7 +144,7 @@ After Render creates the API service:
 
 1. The frontend defaults to `https://nexora-api-xl76.onrender.com` in production and uses the Vite `/api` proxy in local development. If your production API URL changes, set the Vercel frontend environment variable `VITE_API_BASE_URL` to the new service origin (without `/api` or a trailing slash), then redeploy the frontend.
 2. The Blueprint sets `APP_BASE_URL` to `https://nexoralink.vercel.app` so credentialed API requests from the frontend pass CORS checks. For a different frontend URL, update that value in Render. For multiple allowed origins, provide a comma-separated list.
-3. Configure OTP delivery in the Render service. Either set `OTP_DELIVERY_URL` and `OTP_DELIVERY_TOKEN` for a webhook provider, or configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` to send OTPs directly by email. The existing SMTP variables are also used for event reminders. Registration and login require working OTP delivery in production; credentials are not included in the repository.
+3. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` in Render if you want event reminders. SMTP is not used for login or registration.
 
 The frontend sends session cookies with API requests. Production backend cookies use `SameSite=None; Secure` so they can be used when the API is hosted on a different origin.
 

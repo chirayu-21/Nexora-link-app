@@ -19,10 +19,6 @@ services:
           property: connectionString
       - key: APP_BASE_URL
         value: https://nexoralink.vercel.app
-      - key: OTP_DELIVERY_URL
-        sync: false
-      - key: OTP_DELIVERY_TOKEN
-        sync: false
 
 databases:
   - name: nexora-db

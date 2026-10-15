@@ -33,8 +33,6 @@ export const env = {
   smtpUser: process.env.SMTP_USER ?? '',
   smtpPassword: process.env.SMTP_PASSWORD ?? '',
   smtpFrom: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? '',
-  otpDeliveryUrl: process.env.OTP_DELIVERY_URL ?? '',
-  otpDeliveryToken: process.env.OTP_DELIVERY_TOKEN ?? '',
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   redisUrl: process.env.REDIS_URL ?? '',
